@@ -9,43 +9,43 @@ import (
 )
 
 type AnalysisResult struct {
-	PodName        string            json:"pod_name"
-	Namespace      string            json:"namespace"
-	Status         string            json:"status"
-	RestartCount   int               json:"restart_count"
-	NodeName       string            json:"node_name"
-	Age            string            json:"age"
-	LogErrors      []LogEntry        json:"log_errors,omitempty"
-	Timeline       []TimelineEvent   json:"timeline,omitempty"
-	SourcePatterns []SourceMatch     json:"source_patterns,omitempty"
-	Recommendations []string         json:"recommendations,omitempty"
+	PodName         string           + "" + json:"pod_name" + "" + 
+	Namespace       string           + "" + json:"namespace" + "" + 
+	Status          string           + "" + json:"status" + "" + 
+	RestartCount    int              + "" + json:"restart_count" + "" + 
+	NodeName        string           + "" + json:"node_name" + "" + 
+	Age             string           + "" + json:"age" + "" + 
+	LogErrors       []LogEntry       + "" + json:"log_errors,omitempty" + "" + 
+	Timeline        []TimelineEvent  + "" + json:"timeline,omitempty" + "" + 
+	SourcePatterns  []SourceMatch    + "" + json:"source_patterns,omitempty" + "" + 
+	Recommendations []string         + "" + json:"recommendations,omitempty" + "" + 
 }
 
 type LogEntry struct {
-	Timestamp string json:"timestamp"
-	Level     string json:"level"
-	Message   string json:"message"
+	Timestamp string  + "" + json:"timestamp" + "" + 
+	Level     string  + "" + json:"level" + "" + 
+	Message   string  + "" + json:"message" + "" + 
 }
 
 type TimelineEvent struct {
-	Time    string json:"time"
-	Event   string json:"event"
-	Reason  string json:"reason,omitempty"
-	Message string json:"message,omitempty"
+	Time    string  + "" + json:"time" + "" + 
+	Event   string  + "" + json:"event" + "" + 
+	Reason  string  + "" + json:"reason,omitempty" + "" + 
+	Message string  + "" + json:"message,omitempty" + "" + 
 }
 
 type SourceMatch struct {
-	Pattern string json:"pattern"
-	File    string json:"file"
+	Pattern string  + "" + json:"pattern" + "" + 
+	File    string  + "" + json:"file" + "" + 
 }
 
 type Report struct {
-	GeneratedAt    string            json:"generated_at"
-	TotalPods      int               json:"total_pods"
-	HealthyPods    int               json:"healthy_pods"
-	UnhealthyPods  int               json:"unhealthy_pods"
-	Results        []AnalysisResult  json:"results"
-	Summary        map[string]int    json:"summary"
+	GeneratedAt   string            + "" + json:"generated_at" + "" + 
+	TotalPods     int               + "" + json:"total_pods" + "" + 
+	HealthyPods   int               + "" + json:"healthy_pods" + "" + 
+	UnhealthyPods int               + "" + json:"unhealthy_pods" + "" + 
+	Results       []AnalysisResult  + "" + json:"results" + "" + 
+	Summary       map[string]int    + "" + json:"summary" + "" + 
 }
 
 func OutputJSON(results []AnalysisResult, pretty bool) error {
