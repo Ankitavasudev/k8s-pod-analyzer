@@ -9,43 +9,43 @@ import (
 )
 
 type AnalysisResult struct {
-	PodName         string           + "" + json:"pod_name" + "" + 
-	Namespace       string           + "" + json:"namespace" + "" + 
-	Status          string           + "" + json:"status" + "" + 
-	RestartCount    int              + "" + json:"restart_count" + "" + 
-	NodeName        string           + "" + json:"node_name" + "" + 
-	Age             string           + "" + json:"age" + "" + 
-	LogErrors       []LogEntry       + "" + json:"log_errors,omitempty" + "" + 
-	Timeline        []TimelineEvent  + "" + json:"timeline,omitempty" + "" + 
-	SourcePatterns  []SourceMatch    + "" + json:"source_patterns,omitempty" + "" + 
-	Recommendations []string         + "" + json:"recommendations,omitempty" + "" + 
+	PodName         string          `json:"pod_name"`
+	Namespace       string          `json:"namespace"`
+	Status          string          `json:"status"`
+	RestartCount    int             `json:"restart_count"`
+	NodeName        string          `json:"node_name"`
+	Age             string          `json:"age"`
+	LogErrors       []LogEntry      `json:"log_errors,omitempty"`
+	Timeline        []TimelineEvent `json:"timeline,omitempty"`
+	SourcePatterns  []SourceMatch   `json:"source_patterns,omitempty"`
+	Recommendations []string        `json:"recommendations,omitempty"`
 }
 
 type LogEntry struct {
-	Timestamp string  + "" + json:"timestamp" + "" + 
-	Level     string  + "" + json:"level" + "" + 
-	Message   string  + "" + json:"message" + "" + 
+	Timestamp string `json:"timestamp"`
+	Level     string `json:"level"`
+	Message   string `json:"message"`
 }
 
 type TimelineEvent struct {
-	Time    string  + "" + json:"time" + "" + 
-	Event   string  + "" + json:"event" + "" + 
-	Reason  string  + "" + json:"reason,omitempty" + "" + 
-	Message string  + "" + json:"message,omitempty" + "" + 
+	Time    string `json:"time"`
+	Event   string `json:"event"`
+	Reason  string `json:"reason,omitempty"`
+	Message string `json:"message,omitempty"`
 }
 
 type SourceMatch struct {
-	Pattern string  + "" + json:"pattern" + "" + 
-	File    string  + "" + json:"file" + "" + 
+	Pattern string `json:"pattern"`
+	File    string `json:"file"`
 }
 
 type Report struct {
-	GeneratedAt   string            + "" + json:"generated_at" + "" + 
-	TotalPods     int               + "" + json:"total_pods" + "" + 
-	HealthyPods   int               + "" + json:"healthy_pods" + "" + 
-	UnhealthyPods int               + "" + json:"unhealthy_pods" + "" + 
-	Results       []AnalysisResult  + "" + json:"results" + "" + 
-	Summary       map[string]int    + "" + json:"summary" + "" + 
+	GeneratedAt   string           `json:"generated_at"`
+	TotalPods     int              `json:"total_pods"`
+	HealthyPods   int              `json:"healthy_pods"`
+	UnhealthyPods int              `json:"unhealthy_pods"`
+	Results       []AnalysisResult `json:"results"`
+	Summary       map[string]int   `json:"summary"`
 }
 
 func OutputJSON(results []AnalysisResult, pretty bool) error {
@@ -57,7 +57,6 @@ func OutputJSON(results []AnalysisResult, pretty bool) error {
 		Results:       results,
 		Summary:       make(map[string]int),
 	}
-
 	for _, r := range results {
 		if r.Status == "Running" && r.RestartCount == 0 {
 			report.HealthyPods++
@@ -66,7 +65,6 @@ func OutputJSON(results []AnalysisResult, pretty bool) error {
 		}
 		report.Summary[r.Status]++
 	}
-
 	var data []byte
 	var err error
 	if pretty {
@@ -84,32 +82,10 @@ func OutputJSON(results []AnalysisResult, pretty bool) error {
 func OutputCSV(results []AnalysisResult) error {
 	writer := csv.NewWriter(os.Stdout)
 	defer writer.Flush()
-
-	header := []string{"Pod", "Namespace", "Status", "Restarts", "Node", "Age", "Errors", "Recommendations"}
+	header := []string{"Pod", "Namespace", "Status", "Restarts", "Node", "Age"}
 	writer.Write(header)
-
 	for _, r := range results {
-		errors := ""
-		errMsgs := []string{}
-		for _, e := range r.LogErrors {
-			errMsgs = append(errMsgs, e.Message)
-		}
-		if len(errMsgs) > 0 {
-			errors = strings.Join(errMsgs, "; ")
-		}
-
-		recs := strings.Join(r.Recommendations, "; ")
-
-		record := []string{
-			r.PodName,
-			r.Namespace,
-			r.Status,
-			fmt.Sprintf("%d", r.RestartCount),
-			r.NodeName,
-			r.Age,
-			errors,
-			recs,
-		}
+		record := []string{r.PodName, r.Namespace, r.Status, fmt.Sprintf("%d", r.RestartCount), r.NodeName, r.Age}
 		writer.Write(record)
 	}
 	return nil
