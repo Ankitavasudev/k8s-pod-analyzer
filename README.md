@@ -12,6 +12,14 @@ cat examples/sample.log | ./pod-analyzer analyze -
 ./pod-analyzer kubectl -n payments --pod api-7d9f --since 30
 ```
 
+## Install
+
+```bash
+go install github.com/Ankitavasudev/k8s-pod-analyzer@v0.1.0
+```
+
+Go 1.21+. From a clone: `go build -o pod-analyzer .`
+
 ## What it does
 
 `analyze` reads one line at a time and classifies it:
