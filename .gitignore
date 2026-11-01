@@ -1,0 +1,4 @@
+﻿k8s-pod-analyzer
+k8s-pod-analyzer.exe
+*.exe
+out.csv

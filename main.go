@@ -5,6 +5,7 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"regexp"
@@ -26,15 +27,15 @@ type LogEntry struct {
 }
 
 type AnalysisResult struct {
-	TotalLines  int              `json:"total_lines"`
-	ErrorCount  int              `json:"error_count"`
-	WarnCount   int              `json:"warn_count"`
-	InfoCount   int              `json:"info_count"`
-	DebugCount  int              `json:"debug_count"`
-	TopErrors   []ErrorCount     `json:"top_errors"`
-	Timeline    map[string]int   `json:"timeline"`
-	LevelCounts map[string]int   `json:"level_counts"`
-	PodStats    map[string]int   `json:"pod_stats,omitempty"`
+	TotalLines     int            `json:"total_lines"`
+	ErrorCount     int            `json:"error_count"`
+	WarnCount      int            `json:"warn_count"`
+	InfoCount      int            `json:"info_count"`
+	DebugCount     int            `json:"debug_count"`
+	TopErrors      []ErrorCount   `json:"top_errors"`
+	Timeline       map[string]int `json:"timeline"`
+	LevelCounts    map[string]int `json:"level_counts"`
+	PodStats       map[string]int `json:"pod_stats,omitempty"`
 	NamespaceStats map[string]int `json:"namespace_stats,omitempty"`
 }
 
@@ -44,17 +45,22 @@ type ErrorCount struct {
 }
 
 type Report struct {
-	Timestamp   string          `json:"timestamp"`
-	Summary     AnalysisResult  `json:"summary"`
-	Entries     []LogEntry      `json:"entries,omitempty"`
+	Timestamp string         `json:"timestamp"`
+	Summary   AnalysisResult `json:"summary"`
+	Entries   []LogEntry     `json:"entries,omitempty"`
 }
 
 func parseLogLine(line string) LogEntry {
 	entry := LogEntry{Message: line}
 	re := regexp.MustCompile(`(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2})`)
 	if match := re.FindString(line); match != "" {
-		if t, err := time.Parse("2006-01-02T15:04:05", match); err == nil {
-			entry.Timestamp = t
+		// The regexp accepts a space as the separator, so try both layouts;
+		// time.Parse with the T layout always failed on "2026-08-01 10:00:00".
+		for _, layout := range []string{"2006-01-02T15:04:05", "2006-01-02 15:04:05"} {
+			if t, err := time.Parse(layout, match); err == nil {
+				entry.Timestamp = t
+				break
+			}
 		}
 	}
 	upper := strings.ToUpper(line)
@@ -71,12 +77,30 @@ func parseLogLine(line string) LogEntry {
 	return entry
 }
 
+var (
+	timestampPattern = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?\s*`)
+	levelPattern     = regexp.MustCompile(`^(?i)(ERROR|FATAL|PANIC|WARN(?:ING)?|INFO|DEBUG)\s*[:|-]?\s*`)
+)
+
+// normalizeErrorMessage removes the timestamp and level prefix so the same
+// failure from different seconds is counted once. Without this every line is
+// unique and "top errors" is just "the last ten lines".
+func normalizeErrorMessage(line string) string {
+	trimmed := timestampPattern.ReplaceAllString(line, "")
+	trimmed = levelPattern.ReplaceAllString(trimmed, "")
+	trimmed = strings.TrimSpace(trimmed)
+	if trimmed == "" {
+		return strings.TrimSpace(line)
+	}
+	return trimmed
+}
+
 func analyzeLogs(entries []LogEntry) AnalysisResult {
 	result := AnalysisResult{
-		TotalLines:  len(entries),
-		Timeline:    make(map[string]int),
-		LevelCounts: make(map[string]int),
-		PodStats:    make(map[string]int),
+		TotalLines:     len(entries),
+		Timeline:       make(map[string]int),
+		LevelCounts:    make(map[string]int),
+		PodStats:       make(map[string]int),
 		NamespaceStats: make(map[string]int),
 	}
 	errorMsgs := make(map[string]int)
@@ -85,7 +109,7 @@ func analyzeLogs(entries []LogEntry) AnalysisResult {
 		switch e.Level {
 		case "ERROR":
 			result.ErrorCount++
-			msg := e.Message
+			msg := normalizeErrorMessage(e.Message)
 			if len(msg) > 120 {
 				msg = msg[:120]
 			}
@@ -161,38 +185,67 @@ func getPodList(namespace string) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("kubectl get pods failed: %v - %s", err, string(output))
 	}
- pods := strings.Fields(string(output))
+	pods := strings.Fields(string(output))
 	return pods, nil
 }
 
-func outputJSON(result AnalysisResult) {
+func writeJSON(w io.Writer, result AnalysisResult) error {
 	report := Report{
 		Timestamp: time.Now().Format(time.RFC3339),
 		Summary:   result,
 	}
-	data, _ := json.MarshalIndent(report, "", "  ")
-	fmt.Println(string(data))
+	encoder := json.NewEncoder(w)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(report)
+}
+
+func outputJSON(result AnalysisResult) {
+	if err := writeJSON(os.Stdout, result); err != nil {
+		fmt.Fprintf(os.Stderr, "Error writing JSON: %v\n", err)
+	}
+}
+
+// writeCSV emits three small tables back to back: counts, the timeline, and the
+// most frequent error messages. Timeline keys are sorted because map iteration
+// order would otherwise make the output differ between runs.
+func writeCSV(w io.Writer, result AnalysisResult) error {
+	writer := csv.NewWriter(w)
+	rows := [][]string{
+		{"metric", "value"},
+		{"total_lines", strconv.Itoa(result.TotalLines)},
+		{"error_count", strconv.Itoa(result.ErrorCount)},
+		{"warn_count", strconv.Itoa(result.WarnCount)},
+		{"info_count", strconv.Itoa(result.InfoCount)},
+		{"debug_count", strconv.Itoa(result.DebugCount)},
+		{},
+		{"timestamp", "count"},
+	}
+
+	timeline := make([]string, 0, len(result.Timeline))
+	for timestamp := range result.Timeline {
+		timeline = append(timeline, timestamp)
+	}
+	sort.Strings(timeline)
+	for _, timestamp := range timeline {
+		rows = append(rows, []string{timestamp, strconv.Itoa(result.Timeline[timestamp])})
+	}
+
+	rows = append(rows, []string{}, []string{"error_message", "count"})
+	for _, entry := range result.TopErrors {
+		rows = append(rows, []string{entry.Message, strconv.Itoa(entry.Count)})
+	}
+
+	if err := writer.WriteAll(rows); err != nil {
+		return err
+	}
+	writer.Flush()
+	return writer.Error()
 }
 
 func outputCSV(result AnalysisResult) {
-	writer := csv.NewWriter(os.Stdout)
-	writer.Write([]string{"metric", "value"})
-	writer.Write([]string{"total_lines", strconv.Itoa(result.TotalLines)})
-	writer.Write([]string{"error_count", strconv.Itoa(result.ErrorCount)})
-	writer.Write([]string{"warn_count", strconv.Itoa(result.WarnCount)})
-	writer.Write([]string{"info_count", strconv.Itoa(result.InfoCount)})
-	writer.Write([]string{"debug_count", strconv.Itoa(result.DebugCount)})
-	writer.Write([]string{})
-	writer.Write([]string{"timestamp", "count"})
-	for t, c := range result.Timeline {
-		writer.Write([]string{t, strconv.Itoa(c)})
+	if err := writeCSV(os.Stdout, result); err != nil {
+		fmt.Fprintf(os.Stderr, "Error writing CSV: %v\n", err)
 	}
-	writer.Write([]string{})
-	writer.Write([]string{"error_message", "count"})
-	for _, e := range result.TopErrors {
-		writer.Write([]string{e.Message, strconv.Itoa(e.Count)})
-	}
-	writer.Flush()
 }
 
 func main() {

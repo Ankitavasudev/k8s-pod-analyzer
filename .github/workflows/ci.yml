@@ -1,18 +1,51 @@
 name: CI
+
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
+
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        go-version: ["1.21", "1.22", "1.23"]
+
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.21'
-      - name: Build
-        run: go build -v ./...
+          go-version: ${{ matrix.go-version }}
+
+      - name: Format
+        run: test -z "$(gofmt -l .)"
+
+      - name: Vet
+        run: go vet ./...
+
       - name: Test
-        run: go test -v -race ./...
+        run: go test -race ./...
+
+      - name: Build
+        run: go build -o pod-analyzer .
+
+      - name: Analyze the bundled sample
+        run: |
+          ./pod-analyzer analyze examples/sample.log --timeline
+          ./pod-analyzer analyze examples/sample.log -o json | python3 -c "
+import json, sys
+report = json.load(sys.stdin)
+summary = report['summary']
+assert summary['total_lines'] == 10, summary
+assert summary['error_count'] == 4, summary
+assert summary['top_errors'][0]['count'] == 3, summary
+print('json output ok')
+"
+          ./pod-analyzer analyze examples/sample.log -o csv > out.csv
+          grep -q 'error_count,4' out.csv
+          ./pod-analyzer analyze examples/sample.log -l error | grep -q 'Errors: 4'
+          cat examples/sample.log | ./pod-analyzer analyze -

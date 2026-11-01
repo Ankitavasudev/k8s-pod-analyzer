@@ -1,100 +1,80 @@
-# K8s Pod Analyzer
+﻿# k8s-pod-analyzer
 
-> Kubernetes pod log analyzer with JSON/CSV output, filter flags, and report generation.
-
-[![CI](https://github.com/Ankitavasudev/k8s-pod-analyzer/actions/workflows/ci.yml/badge.svg)](https://github.com/Ankitavasudev/k8s-pod-analyzer/actions)
-[![Go 1.21+](https://img.shields.io/badge/go-1.21+-00ADD8.svg)](https://golang.org)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-
-## Features
-
-- **Log Analysis** - Parse pod logs, extract errors and warnings
-- **JSON/CSV Output** - Machine-readable export formats
-- **Filter Flags** - Filter by status, restart count, errors, namespace
-- **Report Generator** - HTML and text report generation
-- **Real-time Monitoring** - Watch mode for live log streaming
-
-## Quick Start
+Count errors and warnings in container logs, rank the most frequent failure
+messages, and bucket them by minute. Works on a local log file, stdin, or
+straight from `kubectl logs`.
 
 ```bash
-# Install
-git clone https://github.com/Ankitavasudev/k8s-pod-analyzer.git
-cd k8s-pod-analyzer
 go build -o pod-analyzer .
 
-# Analyze all pods
-./pod-analyzer
-
-# Filter by namespace
-./pod-analyzer -n default
-
-# Filter by status
-./pod-analyzer --status CrashLoopBackOff
-
-# Filter by restart count
-./pod-analyzer --restarts 5
-
-# Show only error logs
-./pod-analyzer --errors
-
-# JSON output
-./pod-analyzer --format json
-
-# CSV output
-./pod-analyzer --format csv
-
-# Generate report
-./pod-analyzer --report report.html
+./pod-analyzer analyze examples/sample.log --timeline
+cat examples/sample.log | ./pod-analyzer analyze -
+./pod-analyzer kubectl -n payments --pod api-7d9f --since 30
 ```
 
-## Filter Options
+## What it does
 
-| Flag | Description | Example |
-|------|-------------|---------|
-| `-n` | Namespace filter | `-n default` |
-| `--status` | Pod status filter | `--status Running` |
-| `--restarts` | Min restart count | `--restarts 3` |
-| `--errors` | Show only error logs | `--errors` |
-| `--format` | Output format | `--format json` |
-| `--report` | Generate report | `--report report.html` |
+`analyze` reads one line at a time and classifies it:
 
-## Output Example
+| Level | Matched on (case-insensitive) |
+|---|---|
+| `ERROR` | `ERROR`, `FATAL`, `PANIC` |
+| `WARN` | `WARN` |
+| `DEBUG` | `DEBUG` |
+| `INFO` | everything else |
 
-```json
-{
-  "pod_name": "nginx-abc123",
-  "namespace": "default",
-  "status": "Running",
-  "restart_count": 0,
-  "log_errors": [
-    {
-      "timestamp": "2026-08-09T12:00:00Z",
-      "level": "error",
-      "message": "Connection refused"
-    }
-  ]
-}
+A leading `YYYY-MM-DD[T ]HH:MM:SS` is parsed as the timestamp; lines without one
+still count towards the totals but are left out of the timeline.
+
+The result contains total lines, a count per level, the ten most frequent error
+messages (truncated to 120 characters), a per-minute histogram, and â€” in
+`kubectl` mode â€” lines per pod and per namespace.
+
+## Output formats
+
+```bash
+./pod-analyzer analyze app.log                  # text summary
+./pod-analyzer analyze app.log -o json          # {"timestamp": ..., "summary": {...}}
+./pod-analyzer analyze app.log -o csv           # three CSV tables
+./pod-analyzer analyze app.log -l error         # only ERROR lines
+./pod-analyzer analyze app.log -t               # add the timeline histogram
 ```
 
-## Architecture
+The CSV output is three stacked tables â€” `metric,value`, `timestamp,count`,
+`error_message,count` â€” with the timeline sorted chronologically so repeated
+runs produce identical bytes.
+
+## kubectl mode
+
+```bash
+./pod-analyzer kubectl                       # every pod in the current namespace
+./pod-analyzer kubectl -n prod -p web-0      # one pod
+./pod-analyzer kubectl -n prod -c sidecar    # one container
+./pod-analyzer kubectl --since 15            # last 15 minutes (default 60)
+```
+
+Each call runs `kubectl logs --tail=1000`; a pod that fails to return logs is
+skipped rather than aborting the run. If `-p` is omitted, the pod list comes
+from `kubectl get pods`.
+
+## Layout
 
 ```
-k8s-pod-analyzer/
-├── main.go         # CLI entry point, flags, analysis logic
-├── output.go       # JSON/CSV output formatting
-├── filters.go      # Filter functions
-├── output_test.go  # Output tests
-└── main_test.go    # Main logic tests
+main.go       parsing, analysis, text/JSON/CSV rendering, cobra commands
+main_test.go  14 tests: levels, timestamps, ranking, truncation, CSV stability
+examples/     a small log file used by the README and CI
 ```
 
-## Tech Stack
+No third-party code except cobra.
 
-- **Go 1.21+** - Core language
-- **kubectl** - Kubernetes API access
-- **encoding/json** - JSON output
-- **encoding/csv** - CSV output
-- **testing** - Unit tests
+## Development
 
-## License
+```bash
+go test ./...
+go vet ./...
+gofmt -l .      # should print nothing
+```
 
-MIT License - see [LICENSE](LICENSE) for details.
+## Licence
+
+MIT â€” see [LICENSE](LICENSE).

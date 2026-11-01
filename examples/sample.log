@@ -1,0 +1,10 @@
+2026-08-01 09:58:12 INFO  server starting on :8080
+2026-08-01 09:58:13 INFO  connected to postgres
+2026-08-01 09:58:20 WARN  slow query took 1200ms
+2026-08-01 09:59:01 ERROR connection reset by peer
+2026-08-01 09:59:02 ERROR connection reset by peer
+2026-08-01 09:59:05 ERROR connection reset by peer
+2026-08-01 09:59:30 DEBUG cache hit ratio 0.92
+2026-08-01 10:00:00 INFO  health check ok
+2026-08-01 10:00:15 WARN  client disconnected
+2026-08-01 10:00:44 FATAL cannot bind port: address already in use
