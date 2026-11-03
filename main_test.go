@@ -200,6 +200,89 @@ func renderCSV(t *testing.T, result AnalysisResult) string {
 	return output
 }
 
+func TestAnalyzeLogsBreaksTiesByMessage(t *testing.T) {
+	entries := []LogEntry{
+		{Level: "ERROR", Message: "beta"},
+		{Level: "ERROR", Message: "alpha"},
+		{Level: "ERROR", Message: "beta"},
+		{Level: "ERROR", Message: "alpha"},
+	}
+	result := analyzeLogs(entries)
+	if len(result.TopErrors) != 2 {
+		t.Fatalf("expected 2 errors, got %+v", result.TopErrors)
+	}
+	if result.TopErrors[0].Message != "alpha" || result.TopErrors[1].Message != "beta" {
+		t.Errorf("ties are not ordered by message: %+v", result.TopErrors)
+	}
+}
+
+func TestFilterByLevel(t *testing.T) {
+	entries := []LogEntry{
+		{Level: "ERROR"}, {Level: "WARN"}, {Level: "ERROR"}, {Level: "INFO"},
+	}
+	if got := filterByLevel(entries, ""); len(got) != 4 {
+		t.Errorf("empty filter dropped lines: %d", len(got))
+	}
+	if got := filterByLevel(entries, "error"); len(got) != 2 {
+		t.Errorf("level filter should be case-insensitive, got %d lines", len(got))
+	}
+	if got := filterByLevel(entries, "DEBUG"); len(got) != 0 {
+		t.Errorf("expected no debug lines, got %d", len(got))
+	}
+}
+
+func TestWriteHTMLIsSelfContainedAndEscapesLogLines(t *testing.T) {
+	result := analyzeLogs([]LogEntry{
+		{
+			Level:     "ERROR",
+			Message:   `2026-08-01 10:00:00 ERROR <script>alert("x")</script>`,
+			Timestamp: time.Date(2026, 8, 1, 10, 0, 0, 0, time.UTC),
+			Pod:       `<img src=x onerror=alert(1)>`,
+		},
+	})
+
+	var buf bytes.Buffer
+	generated := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
+	if err := writeHTML(&buf, result, generated); err != nil {
+		t.Fatal(err)
+	}
+	page := buf.String()
+
+	for _, want := range []string{
+		"<!DOCTYPE html>",
+		"<style>",
+		"width:100%",
+		"2026-08-01 12:00 UTC",
+		"&lt;script&gt;",
+		"&lt;img src=x onerror=alert(1)&gt;",
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("report is missing %q", want)
+		}
+	}
+	if strings.Contains(page, "<script") {
+		t.Error("report contains a script tag; log content was not escaped")
+	}
+	if strings.Contains(page, "<link") || strings.Contains(page, "src=\"http") {
+		t.Error("report loads an external resource; it should work from disk")
+	}
+}
+
+func TestWriteHTMLOmitsEmptySections(t *testing.T) {
+	result := analyzeLogs([]LogEntry{{Level: "INFO", Message: "ok"}})
+	var buf bytes.Buffer
+	if err := writeHTML(&buf, result, time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)); err != nil {
+		t.Fatal(err)
+	}
+	page := buf.String()
+	if !strings.Contains(page, "No errors in this log.") {
+		t.Error("empty error section was not rendered")
+	}
+	if strings.Contains(page, "Lines per pod") {
+		t.Error("pod section should be omitted when there is no pod data")
+	}
+}
+
 func TestMinCapsBars(t *testing.T) {
 	if min(3, 50) != 3 || min(80, 50) != 50 {
 		t.Error("min does not cap correctly")

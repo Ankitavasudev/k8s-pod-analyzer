@@ -1,0 +1,101 @@
+2026-08-01 09:52:04 INFO  checkout-api starting, version 1.8.3
+2026-08-01 09:52:05 INFO  connected to postgres pool size=20
+2026-08-01 09:52:06 INFO  started grpc server on :9090
+2026-08-01 09:52:11 INFO  GET /healthz 200 1ms
+2026-08-01 09:52:30 INFO  GET /api/v1/cart 200 24ms
+2026-08-01 09:52:44 DEBUG cache hit key=cart:8812
+2026-08-01 09:53:02 INFO  GET /api/v1/orders 200 31ms
+2026-08-01 09:53:19 WARN  slow query took 1180ms table=orders
+2026-08-01 09:53:27 INFO  GET /api/v1/orders 200 1402ms
+2026-08-01 09:53:40 DEBUG span exported trace_id=4bf92f3577b34da6
+2026-08-01 09:54:01 INFO  GET /api/v1/cart 200 19ms
+2026-08-01 09:54:22 INFO  POST /api/v1/orders 201 88ms
+2026-08-01 09:54:35 WARN  connection pool at 18/20
+2026-08-01 09:54:51 INFO  GET /healthz 200 2ms
+2026-08-01 09:55:03 INFO  GET /api/v1/orders 200 27ms
+2026-08-01 09:55:18 DEBUG cache hit key=order:9921
+2026-08-01 09:55:33 INFO  POST /api/v1/checkout 201 132ms
+2026-08-01 09:55:49 WARN  slow query took 1420ms table=payments
+2026-08-01 09:56:02 INFO  GET /api/v1/orders 200 44ms
+2026-08-01 09:56:15 ERROR connection reset by peer
+2026-08-01 09:56:16 WARN  retrying request attempt=2 path=/api/v1/payments
+2026-08-01 09:56:17 ERROR connection reset by peer
+2026-08-01 09:56:19 ERROR context deadline exceeded calling payments
+2026-08-01 09:56:24 WARN  retrying request attempt=3 path=/api/v1/payments
+2026-08-01 09:56:26 ERROR context deadline exceeded calling payments
+2026-08-01 09:56:31 ERROR upstream 503 from inventory
+2026-08-01 09:56:33 WARN  client disconnected before response
+2026-08-01 09:57:40 ERROR upstream 503 from inventory
+2026-08-01 09:57:42 ERROR context deadline exceeded calling payments
+2026-08-01 09:57:44 ERROR pq: too many connections
+2026-08-01 09:57:46 ERROR connection reset by peer
+2026-08-01 09:57:48 ERROR connection reset by peer
+2026-08-01 09:57:50 ERROR connection reset by peer
+2026-08-01 09:57:52 ERROR upstream 503 from inventory
+2026-08-01 09:57:54 ERROR connection reset by peer
+2026-08-01 09:57:56 ERROR context deadline exceeded calling payments
+2026-08-01 09:57:58 ERROR connection reset by peer
+2026-08-01 09:57:60 ERROR connection reset by peer
+2026-08-01 09:57:62 ERROR pq: too many connections
+2026-08-01 09:57:64 ERROR pq: too many connections
+2026-08-01 09:57:66 ERROR connection reset by peer
+2026-08-01 09:57:68 ERROR context deadline exceeded calling payments
+2026-08-01 09:57:70 ERROR connection reset by peer
+2026-08-01 09:57:72 ERROR pq: too many connections
+2026-08-01 09:57:74 ERROR connection reset by peer
+2026-08-01 09:57:76 ERROR connection reset by peer
+2026-08-01 09:57:78 ERROR context deadline exceeded calling payments
+2026-08-01 09:57:80 ERROR connection reset by peer
+2026-08-01 09:57:82 ERROR pq: too many connections
+2026-08-01 09:57:84 ERROR connection reset by peer
+2026-08-01 09:57:86 ERROR context deadline exceeded calling payments
+2026-08-01 09:58:05 WARN  retrying request attempt=4 path=/api/v1/payments
+2026-08-01 09:58:10 WARN  slow query took 2100ms table=orders
+2026-08-01 09:58:15 WARN  retrying request attempt=4 path=/api/v1/payments
+2026-08-01 09:58:20 WARN  connection pool at 20/20
+2026-08-01 09:58:25 WARN  connection pool at 20/20
+2026-08-01 09:58:30 WARN  retrying request attempt=4 path=/api/v1/payments
+2026-08-01 09:58:35 WARN  slow query took 2100ms table=orders
+2026-08-01 09:58:40 WARN  retrying request attempt=4 path=/api/v1/payments
+2026-08-01 09:58:45 WARN  slow query took 2100ms table=orders
+2026-08-01 09:58:12 INFO  GET /api/v1/orders 500 12ms
+2026-08-01 09:58:19 INFO  POST /api/v1/checkout 500 41ms
+2026-08-01 09:58:26 INFO  POST /api/v1/checkout 500 41ms
+2026-08-01 09:58:33 INFO  GET /healthz 503 3ms
+2026-08-01 09:58:40 INFO  GET /healthz 503 3ms
+2026-08-01 09:58:47 INFO  POST /api/v1/checkout 500 41ms
+2026-08-01 09:59:02 ERROR pq: too many connections
+2026-08-01 09:59:05 WARN  connection pool at 20/20
+2026-08-01 09:59:11 INFO  rolling restart requested by deployment controller
+2026-08-01 09:59:40 INFO  checkout-api starting, version 1.8.3
+2026-08-01 09:59:41 INFO  connected to postgres pool size=40
+2026-08-01 09:59:42 INFO  started grpc server on :9090
+2026-08-01 10:00:01 INFO  GET /healthz 200 1ms
+2026-08-01 10:00:06 INFO  POST /api/v1/checkout 201 96ms
+2026-08-01 10:00:10 INFO  POST /api/v1/checkout 201 96ms
+2026-08-01 10:00:14 INFO  GET /api/v1/orders 200 22ms
+2026-08-01 10:00:18 INFO  GET /api/v1/cart 200 17ms
+2026-08-01 10:00:22 INFO  GET /api/v1/orders 200 22ms
+2026-08-01 10:00:26 INFO  POST /api/v1/checkout 201 96ms
+2026-08-01 10:00:30 INFO  POST /api/v1/checkout 201 96ms
+2026-08-01 10:00:34 INFO  GET /api/v1/orders 200 22ms
+2026-08-01 10:00:38 INFO  POST /api/v1/checkout 201 96ms
+2026-08-01 10:00:42 INFO  GET /api/v1/orders 200 22ms
+2026-08-01 10:00:52 DEBUG cache hit key=cart:9104
+2026-08-01 10:01:03 WARN  slow query took 1080ms table=orders
+2026-08-01 10:01:10 INFO  GET /healthz 200 1ms
+2026-08-01 10:01:15 INFO  GET /api/v1/orders 200 25ms
+2026-08-01 10:01:20 INFO  GET /api/v1/cart 200 15ms
+2026-08-01 10:01:25 INFO  GET /healthz 200 1ms
+2026-08-01 10:01:30 INFO  GET /healthz 200 1ms
+2026-08-01 10:01:35 INFO  GET /api/v1/cart 200 15ms
+2026-08-01 10:01:40 INFO  GET /api/v1/cart 200 15ms
+2026-08-01 10:01:45 INFO  GET /api/v1/cart 200 15ms
+2026-08-01 10:01:55 DEBUG span exported trace_id=9a1c7d22e0b34f18
+2026-08-01 10:02:03 INFO  POST /api/v1/checkout 201 104ms
+2026-08-01 10:02:11 INFO  POST /api/v1/checkout 201 104ms
+2026-08-01 10:02:19 INFO  POST /api/v1/checkout 201 104ms
+2026-08-01 10:02:27 INFO  GET /api/v1/orders 200 29ms
+2026-08-01 10:02:35 INFO  GET /api/v1/orders 200 29ms
+2026-08-01 10:02:43 INFO  GET /api/v1/orders 200 29ms
+2026-08-01 10:02:57 INFO  incident closed: failure rate back under 1%

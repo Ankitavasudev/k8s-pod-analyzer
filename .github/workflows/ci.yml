@@ -41,6 +41,14 @@ jobs:
           grep -q '"error_count": 4' out.json
           ./pod-analyzer analyze examples/sample.log -o csv > out.csv
           grep -q 'error_count,4' out.csv
-          ./pod-analyzer analyze examples/sample.log -l error | grep -q 'Connection reset' || true
           ./pod-analyzer analyze examples/sample.log -l error | grep -q 'Errors: 4'
           cat examples/sample.log | ./pod-analyzer analyze -
+
+      - name: Check the HTML report
+        run: |
+          ./pod-analyzer analyze examples/incident.log -o html > report.html
+          grep -q '<!DOCTYPE html>' report.html
+          grep -q 'connection reset by peer' report.html
+          # The report must work offline: no scripts, no external requests.
+          ! grep -q '<script' report.html
+          ! grep -qE '(<link|<img|src="http)' report.html

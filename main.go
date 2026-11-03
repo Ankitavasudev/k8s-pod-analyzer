@@ -5,10 +5,12 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"html/template"
 	"io"
 	"os"
 	"os/exec"
 	"regexp"
+	"runtime/debug"
 	"sort"
 	"strconv"
 	"strings"
@@ -139,7 +141,15 @@ func analyzeLogs(entries []LogEntry) AnalysisResult {
 	for k, v := range errorMsgs {
 		sorted = append(sorted, kv{k, v})
 	}
-	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Value > sorted[j].Value })
+	// Break ties on the message so that two runs over the same log produce the
+	// same order. Without it the top-ten list follows Go's map iteration order
+	// and changes from run to run.
+	sort.Slice(sorted, func(i, j int) bool {
+		if sorted[i].Value != sorted[j].Value {
+			return sorted[i].Value > sorted[j].Value
+		}
+		return sorted[i].Key < sorted[j].Key
+	})
 	for i, s := range sorted {
 		if i >= 10 {
 			break
@@ -199,12 +209,6 @@ func writeJSON(w io.Writer, result AnalysisResult) error {
 	return encoder.Encode(report)
 }
 
-func outputJSON(result AnalysisResult) {
-	if err := writeJSON(os.Stdout, result); err != nil {
-		fmt.Fprintf(os.Stderr, "Error writing JSON: %v\n", err)
-	}
-}
-
 // writeCSV emits three small tables back to back: counts, the timeline, and the
 // most frequent error messages. Timeline keys are sorted because map iteration
 // order would otherwise make the output differ between runs.
@@ -242,9 +246,215 @@ func writeCSV(w io.Writer, result AnalysisResult) error {
 	return writer.Error()
 }
 
-func outputCSV(result AnalysisResult) {
-	if err := writeCSV(os.Stdout, result); err != nil {
-		fmt.Fprintf(os.Stderr, "Error writing CSV: %v\n", err)
+// version is the value used when the binary is built from a checkout. When the
+// binary is installed from a module version, versionString reports that
+// version instead, so the number in the report matches what was downloaded.
+var version = "v0.2.0"
+
+func versionString() string {
+	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" && info.Main.Version != "(devel)" {
+		return info.Main.Version
+	}
+	return version
+}
+
+// sortedKeys returns the map keys in ascending order so output does not depend
+// on Go's randomised map iteration.
+func sortedKeys(m map[string]int) []string {
+	keys := make([]string, 0, len(m))
+	for key := range m {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func filterByLevel(entries []LogEntry, level string) []LogEntry {
+	if level == "" {
+		return entries
+	}
+	level = strings.ToUpper(level)
+	filtered := make([]LogEntry, 0, len(entries))
+	for _, entry := range entries {
+		if entry.Level == level {
+			filtered = append(filtered, entry)
+		}
+	}
+	return filtered
+}
+
+// writeText renders the human-readable summary. The per-pod table is only
+// printed for kubectl mode, where the logs of several pods are merged.
+func writeText(w io.Writer, result AnalysisResult, timeline, showPods bool) error {
+	fmt.Fprintf(w, "=== K8s Pod Log Analysis ===\n")
+	fmt.Fprintf(w, "Total: %d | Errors: %d | Warnings: %d | Info: %d | Debug: %d\n",
+		result.TotalLines, result.ErrorCount, result.WarnCount, result.InfoCount, result.DebugCount)
+	if showPods && len(result.PodStats) > 0 {
+		fmt.Fprintln(w, "\nPod Breakdown:")
+		for _, pod := range sortedKeys(result.PodStats) {
+			fmt.Fprintf(w, "  %s: %d lines\n", pod, result.PodStats[pod])
+		}
+	}
+	if len(result.TopErrors) > 0 {
+		fmt.Fprintln(w, "\nTop Errors:")
+		for _, entry := range result.TopErrors {
+			fmt.Fprintf(w, "  [%d times] %s\n", entry.Count, entry.Message)
+		}
+	}
+	if timeline {
+		fmt.Fprintln(w, "\nTimeline:")
+		for _, minute := range sortedKeys(result.Timeline) {
+			count := result.Timeline[minute]
+			fmt.Fprintf(w, "  %s | %s %d\n", minute, strings.Repeat("#", min(count, 50)), count)
+		}
+	}
+	return nil
+}
+
+type timelineRow struct {
+	Minute  string
+	Count   int
+	Percent int
+}
+
+type namedCount struct {
+	Name  string
+	Count int
+}
+
+type htmlReport struct {
+	Generated string
+	Version   string
+	Result    AnalysisResult
+	Timeline  []timelineRow
+	Pods      []namedCount
+}
+
+// reportTemplate is a single self-contained page: the styles are inline and
+// there is no JavaScript, so the file can be opened from disk, attached to a
+// ticket, or served from a static host without any setup.
+var reportTemplate = template.Must(template.New("report").Parse(`<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pod log report</title>
+<style>
+:root{--bg:#0b1120;--panel:#141c2f;--text:#e6edf7;--muted:#8fa3bf;--line:#243049;--error:#f87171;--warn:#fbbf24;--info:#38bdf8;--debug:#a78bfa}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:900px;margin:0 auto;padding:40px 20px 64px}
+h1{font-size:24px;margin:0 0 4px}
+.sub{color:var(--muted);font-size:13px;margin-bottom:28px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px;margin-bottom:28px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px}
+.card .n{font-size:24px;font-weight:600}
+.card .l{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+.card.error .n{color:var(--error)}
+.card.warn .n{color:var(--warn)}
+.card.info .n{color:var(--info)}
+.card.debug .n{color:var(--debug)}
+section{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px;margin-bottom:20px}
+h2{font-size:15px;margin:0 0 14px}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--muted);font-weight:500;font-size:12px;text-transform:uppercase}
+td.num,th.num{text-align:right;white-space:nowrap;width:64px}
+tr:last-child td{border-bottom:0}
+.bar{display:grid;grid-template-columns:52px 1fr 40px;gap:10px;align-items:center;margin:6px 0;font-size:13px}
+.track{background:#0b1224;border-radius:4px;height:10px;overflow:hidden}
+.fill{height:100%;background:linear-gradient(90deg,#2563eb,#38bdf8);border-radius:4px}
+.count{text-align:right;color:var(--muted)}
+.empty{color:var(--muted);font-size:14px;margin:0}
+footer{color:var(--muted);font-size:12px;margin-top:28px}
+</style>
+</head>
+<body>
+<main>
+<h1>K8s pod log analysis</h1>
+<div class="sub">Generated {{.Generated}} &middot; {{.Result.TotalLines}} lines analysed</div>
+<div class="cards">
+<div class="card"><div class="n">{{.Result.TotalLines}}</div><div class="l">Lines</div></div>
+<div class="card error"><div class="n">{{.Result.ErrorCount}}</div><div class="l">Errors</div></div>
+<div class="card warn"><div class="n">{{.Result.WarnCount}}</div><div class="l">Warnings</div></div>
+<div class="card info"><div class="n">{{.Result.InfoCount}}</div><div class="l">Info</div></div>
+<div class="card debug"><div class="n">{{.Result.DebugCount}}</div><div class="l">Debug</div></div>
+</div>
+<section>
+<h2>Top errors</h2>
+{{if .Result.TopErrors}}<table>
+<thead><tr><th>Message</th><th class="num">Count</th></tr></thead>
+<tbody>{{range .Result.TopErrors}}<tr><td>{{.Message}}</td><td class="num">{{.Count}}</td></tr>{{end}}</tbody>
+</table>{{else}}<p class="empty">No errors in this log.</p>{{end}}
+</section>
+{{if .Timeline}}<section>
+<h2>Timeline (per minute)</h2>
+{{range .Timeline}}<div class="bar"><span>{{.Minute}}</span><div class="track"><div class="fill" style="width:{{.Percent}}%"></div></div><span class="count">{{.Count}}</span></div>{{end}}
+</section>{{end}}
+{{if .Pods}}<section>
+<h2>Lines per pod</h2>
+<table>
+<thead><tr><th>Pod</th><th class="num">Lines</th></tr></thead>
+<tbody>{{range .Pods}}<tr><td>{{.Name}}</td><td class="num">{{.Count}}</td></tr>{{end}}</tbody>
+</table>
+</section>{{end}}
+<footer>Generated by k8s-pod-analyzer {{.Version}}. Errors are grouped after removing timestamps and level prefixes.</footer>
+</main>
+</body>
+</html>
+`))
+
+// writeHTML renders a self-contained report. Log lines are untrusted input, so
+// the template escapes every value it prints.
+func writeHTML(w io.Writer, result AnalysisResult, generated time.Time) error {
+	maxCount := 0
+	for _, count := range result.Timeline {
+		if count > maxCount {
+			maxCount = count
+		}
+	}
+	timeline := make([]timelineRow, 0, len(result.Timeline))
+	for _, minute := range sortedKeys(result.Timeline) {
+		count := result.Timeline[minute]
+		percent := 0
+		if maxCount > 0 {
+			percent = count * 100 / maxCount
+		}
+		timeline = append(timeline, timelineRow{Minute: minute, Count: count, Percent: percent})
+	}
+
+	pods := make([]namedCount, 0, len(result.PodStats))
+	for _, pod := range sortedKeys(result.PodStats) {
+		pods = append(pods, namedCount{Name: pod, Count: result.PodStats[pod]})
+	}
+	sort.Slice(pods, func(i, j int) bool {
+		if pods[i].Count != pods[j].Count {
+			return pods[i].Count > pods[j].Count
+		}
+		return pods[i].Name < pods[j].Name
+	})
+
+	return reportTemplate.Execute(w, htmlReport{
+		Generated: generated.Format("2006-01-02 15:04 MST"),
+		Version:   versionString(),
+		Result:    result,
+		Timeline:  timeline,
+		Pods:      pods,
+	})
+}
+
+// renderResult writes the analysis in the requested format. Every command goes
+// through this function so text, JSON, CSV and HTML stay in sync.
+func renderResult(w io.Writer, result AnalysisResult, format string, timeline, showPods bool) error {
+	switch format {
+	case "json":
+		return writeJSON(w, result)
+	case "csv":
+		return writeCSV(w, result)
+	case "html":
+		return writeHTML(w, result, time.Now())
+	default:
+		return writeText(w, result, timeline, showPods)
 	}
 }
 
@@ -278,50 +488,19 @@ func main() {
 			for scanner.Scan() {
 				entries = append(entries, parseLogLine(scanner.Text()))
 			}
-			if level != "" {
-				level = strings.ToUpper(level)
-				var filtered []LogEntry
-				for _, e := range entries {
-					if e.Level == level {
-						filtered = append(filtered, e)
-					}
-				}
-				entries = filtered
+			if err := scanner.Err(); err != nil {
+				fmt.Fprintf(os.Stderr, "Error reading logs: %s\n", err)
+				os.Exit(1)
 			}
-			result := analyzeLogs(entries)
-			switch outputFmt {
-			case "json":
-				outputJSON(result)
-			case "csv":
-				outputCSV(result)
-			default:
-				fmt.Printf("=== K8s Pod Log Analysis ===\n")
-				fmt.Printf("Total: %d | Errors: %d | Warnings: %d | Info: %d | Debug: %d\n",
-					result.TotalLines, result.ErrorCount, result.WarnCount, result.InfoCount, result.DebugCount)
-				if len(result.TopErrors) > 0 {
-					fmt.Println("\nTop Errors:")
-					for _, e := range result.TopErrors {
-						fmt.Printf("  [%d times] %s\n", e.Count, e.Message)
-					}
-				}
-				if timeline {
-					fmt.Println("\nTimeline:")
-					var times []string
-					for t := range result.Timeline {
-						times = append(times, t)
-					}
-					sort.Strings(times)
-					for _, t := range times {
-						c := result.Timeline[t]
-						bar := strings.Repeat("#", min(c, 50))
-						fmt.Printf("  %s | %s %d\n", t, bar, c)
-					}
-				}
+			result := analyzeLogs(filterByLevel(entries, level))
+			if err := renderResult(os.Stdout, result, outputFmt, timeline, false); err != nil {
+				fmt.Fprintf(os.Stderr, "Error writing %s output: %s\n", outputFmt, err)
+				os.Exit(1)
 			}
 		},
 	}
 	analyzeCmd.Flags().StringP("level", "l", "", "Filter by level (ERROR, WARN, INFO, DEBUG)")
-	analyzeCmd.Flags().StringP("output", "o", "text", "Output format (text, json, csv)")
+	analyzeCmd.Flags().StringP("output", "o", "text", "Output format (text, json, csv, html)")
 	analyzeCmd.Flags().BoolP("timeline", "t", false, "Show timeline histogram")
 
 	var kubectlCmd = &cobra.Command{
@@ -362,51 +541,10 @@ func main() {
 						allEntries = append(allEntries, entry)
 					}
 				}
-				if level != "" {
-					level = strings.ToUpper(level)
-					var filtered []LogEntry
-					for _, e := range allEntries {
-						if e.Level == level {
-							filtered = append(filtered, e)
-						}
-					}
-					allEntries = filtered
-				}
-				result := analyzeLogs(allEntries)
-				switch outputFmt {
-				case "json":
-					outputJSON(result)
-				case "csv":
-					outputCSV(result)
-				default:
-					fmt.Printf("=== K8s Pod Log Analysis ===\n")
-					fmt.Printf("Total: %d | Errors: %d | Warnings: %d | Info: %d | Debug: %d\n",
-						result.TotalLines, result.ErrorCount, result.WarnCount, result.InfoCount, result.DebugCount)
-					if len(result.PodStats) > 0 {
-						fmt.Println("\nPod Breakdown:")
-						for pod, count := range result.PodStats {
-							fmt.Printf("  %s: %d lines\n", pod, count)
-						}
-					}
-					if len(result.TopErrors) > 0 {
-						fmt.Println("\nTop Errors:")
-						for _, e := range result.TopErrors {
-							fmt.Printf("  [%d times] %s\n", e.Count, e.Message)
-						}
-					}
-					if timeline {
-						fmt.Println("\nTimeline:")
-						var times []string
-						for t := range result.Timeline {
-							times = append(times, t)
-						}
-						sort.Strings(times)
-						for _, t := range times {
-							c := result.Timeline[t]
-							bar := strings.Repeat("#", min(c, 50))
-							fmt.Printf("  %s | %s %d\n", t, bar, c)
-						}
-					}
+				result := analyzeLogs(filterByLevel(allEntries, level))
+				if err := renderResult(os.Stdout, result, outputFmt, timeline, true); err != nil {
+					fmt.Fprintf(os.Stderr, "Error writing %s output: %s\n", outputFmt, err)
+					os.Exit(1)
 				}
 				return
 			}
@@ -425,45 +563,10 @@ func main() {
 				}
 				entries = append(entries, entry)
 			}
-			if level != "" {
-				level = strings.ToUpper(level)
-				var filtered []LogEntry
-				for _, e := range entries {
-					if e.Level == level {
-						filtered = append(filtered, e)
-					}
-				}
-				entries = filtered
-			}
-			result := analyzeLogs(entries)
-			switch outputFmt {
-			case "json":
-				outputJSON(result)
-			case "csv":
-				outputCSV(result)
-			default:
-				fmt.Printf("=== K8s Pod Log Analysis ===\n")
-				fmt.Printf("Total: %d | Errors: %d | Warnings: %d | Info: %d | Debug: %d\n",
-					result.TotalLines, result.ErrorCount, result.WarnCount, result.InfoCount, result.DebugCount)
-				if len(result.TopErrors) > 0 {
-					fmt.Println("\nTop Errors:")
-					for _, e := range result.TopErrors {
-						fmt.Printf("  [%d times] %s\n", e.Count, e.Message)
-					}
-				}
-				if timeline {
-					fmt.Println("\nTimeline:")
-					var times []string
-					for t := range result.Timeline {
-						times = append(times, t)
-					}
-					sort.Strings(times)
-					for _, t := range times {
-						c := result.Timeline[t]
-						bar := strings.Repeat("#", min(c, 50))
-						fmt.Printf("  %s | %s %d\n", t, bar, c)
-					}
-				}
+			result := analyzeLogs(filterByLevel(entries, level))
+			if err := renderResult(os.Stdout, result, outputFmt, timeline, false); err != nil {
+				fmt.Fprintf(os.Stderr, "Error writing %s output: %s\n", outputFmt, err)
+				os.Exit(1)
 			}
 		},
 	}
@@ -471,7 +574,7 @@ func main() {
 	kubectlCmd.Flags().StringP("pod", "p", "", "Specific pod name")
 	kubectlCmd.Flags().StringP("container", "c", "", "Container name")
 	kubectlCmd.Flags().IntP("since", "s", 60, "Fetch logs from last N minutes")
-	kubectlCmd.Flags().StringP("output", "o", "text", "Output format (text, json, csv)")
+	kubectlCmd.Flags().StringP("output", "o", "text", "Output format (text, json, csv, html)")
 	kubectlCmd.Flags().StringP("level", "l", "", "Filter by level")
 	kubectlCmd.Flags().BoolP("timeline", "t", false, "Show timeline histogram")
 
@@ -479,7 +582,7 @@ func main() {
 		Use:   "version",
 		Short: "Show version",
 		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Println("k8s-pod-analyzer v2.0.0")
+			fmt.Printf("k8s-pod-analyzer %s\n", versionString())
 		},
 	}
 
