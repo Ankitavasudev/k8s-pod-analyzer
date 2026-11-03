@@ -5,10 +5,10 @@ first. It works on a local file, on stdin, or straight from `kubectl logs`, and
 it can write a self-contained HTML report you can attach to an incident ticket.
 
 ```bash
-pod-analyzer analyze examples/incident.log --timeline
-kubectl logs deploy/checkout-api --since=30m | pod-analyzer analyze -
-pod-analyzer analyze examples/incident.log -o html > report.html
-pod-analyzer kubectl -n payments --pod api-7d9f --since 30
+k8s-pod-analyzer analyze examples/incident.log --timeline
+kubectl logs deploy/checkout-api --since=30m | k8s-pod-analyzer analyze -
+k8s-pod-analyzer analyze examples/incident.log -o html > report.html
+k8s-pod-analyzer kubectl -n payments --pod api-7d9f --since 30
 ```
 
 [See a generated report](https://ankitavasudev.github.io/k8s-pod-analyzer/),
@@ -20,12 +20,13 @@ built from [`examples/incident.log`](examples/incident.log).
 go install github.com/Ankitavasudev/k8s-pod-analyzer@v0.2.0
 ```
 
-Go 1.21 or newer. The binary is called `pod-analyzer`. From a clone, run
-`go build -o pod-analyzer .`
+Go 1.21 or newer. `go install` names the binary after the module, so the command
+is `k8s-pod-analyzer`. From a clone, `go build -o k8s-pod-analyzer .` produces
+the same binary.
 
-`pod-analyzer version` prints the version it was built from: the module version
-when installed with `go install`, or the value compiled into the source when
-built from a checkout.
+`k8s-pod-analyzer version` prints the version it was built from: the module
+version when installed with `go install`, or the value compiled into the source
+when built from a checkout.
 
 ## What it does
 
@@ -58,12 +59,12 @@ then by name, so two runs over the same input produce the same bytes.
 ## Output formats
 
 ```bash
-pod-analyzer analyze app.log                  # text summary
-pod-analyzer analyze app.log -o json          # machine readable
-pod-analyzer analyze app.log -o csv           # three stacked CSV tables
-pod-analyzer analyze app.log -o html          # self-contained report
-pod-analyzer analyze app.log -l error         # only ERROR lines
-pod-analyzer analyze app.log -t               # add the timeline histogram
+k8s-pod-analyzer analyze app.log                  # text summary
+k8s-pod-analyzer analyze app.log -o json          # machine readable
+k8s-pod-analyzer analyze app.log -o csv           # three stacked CSV tables
+k8s-pod-analyzer analyze app.log -o html          # self-contained report
+k8s-pod-analyzer analyze app.log -l error         # only ERROR lines
+k8s-pod-analyzer analyze app.log -t               # add the timeline histogram
 ```
 
 The JSON output is `{"timestamp": ..., "summary": {...}}`, with the timeline as
@@ -81,10 +82,10 @@ report to someone else, which is the point of the format.
 ## kubectl mode
 
 ```bash
-pod-analyzer kubectl                       # every pod in the current namespace
-pod-analyzer kubectl -n prod -p web-0      # one pod
-pod-analyzer kubectl -n prod -c sidecar    # one container
-pod-analyzer kubectl --since 15            # last 15 minutes (default 60)
+k8s-pod-analyzer kubectl                       # every pod in the current namespace
+k8s-pod-analyzer kubectl -n prod -p web-0      # one pod
+k8s-pod-analyzer kubectl -n prod -c sidecar    # one container
+k8s-pod-analyzer kubectl --since 15            # last 15 minutes (default 60)
 ```
 
 Each call runs `kubectl logs --tail=1000`. A pod that fails to return logs is
